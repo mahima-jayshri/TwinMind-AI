@@ -139,6 +139,52 @@ class TwinMindAgent:
             importance=10
         )
         
+        # Initialize goals and habits in database tables
+        from app.models.goals import Goal, Habit
+        try:
+            # Add goals
+            goals_data = digital_dna.get("goals", {})
+            if isinstance(goals_data, dict):
+                for term, titles in goals_data.items():
+                    goal_type = "short_term" if "short" in term else "long_term"
+                    for title in titles:
+                        g = Goal(
+                            user_id=user_id,
+                            title=title,
+                            goal_type=goal_type,
+                            category="career",
+                            progress=0.0,
+                            status="active"
+                        )
+                        self.db.add(g)
+            elif isinstance(goals_data, list):
+                for title in goals_data:
+                    g = Goal(
+                        user_id=user_id,
+                        title=title,
+                        goal_type="short_term",
+                        category="career",
+                        progress=0.0,
+                        status="active"
+                    )
+                    self.db.add(g)
+
+            # Add habits
+            habits_data = digital_dna.get("habits", [])
+            if isinstance(habits_data, list):
+                for habit_name in habits_data:
+                    h = Habit(
+                        user_id=user_id,
+                        name=habit_name,
+                        frequency="daily",
+                        status="active"
+                    )
+                    self.db.add(h)
+            
+            await self.db.commit()
+        except Exception as e:
+            print("Error initializing goals/habits in database:", e)
+        
         return {
             "completed": True,
             "digital_dna": digital_dna

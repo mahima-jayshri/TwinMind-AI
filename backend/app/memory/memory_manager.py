@@ -101,8 +101,9 @@ class MemoryManager:
         return results
 
     async def get_digital_dna(self, user_id: int) -> Dict[str, Any]:
-        """Compile user's digital DNA from all memories"""
-        memories = await self.get_memories(user_id)
+        """Compile user's digital DNA from all memories or user profile"""
+        from app.models.user import User
+        user = await self.db.get(User, user_id)
         
         dna = {
             "personality": [],
@@ -114,14 +115,51 @@ class MemoryManager:
             "weaknesses": []
         }
         
-        for memory in memories:
-            if memory.memory_type in dna:
-                dna[memory.memory_type].append({
-                    "content": memory.content,
-                    "importance": memory.importance,
-                    "metadata": memory.meta_data
-                })
-        
+        # 1. Load from structured user.digital_dna column
+        if user and user.digital_dna:
+            try:
+                profile = json.loads(user.digital_dna) if isinstance(user.digital_dna, str) else user.digital_dna
+                if isinstance(profile, dict):
+                    if "personality_type" in profile:
+                        dna["personality"].append(profile["personality_type"])
+                    if "goals" in profile:
+                        g = profile["goals"]
+                        if isinstance(g, dict):
+                            dna["goals"].extend(g.get("short_term", []) + g.get("long_term", []))
+                        elif isinstance(g, list):
+                            dna["goals"].extend(g)
+                    if "habits" in profile:
+                        dna["habits"].extend(profile["habits"] if isinstance(profile["habits"], list) else [profile["habits"]])
+                    
+                    # Compile preferences from learning/decision styles
+                    pref_list = []
+                    if "learning_style" in profile:
+                        pref_list.append(f"Learning: {profile['learning_style']}")
+                    if "decision_making_style" in profile:
+                        pref_list.append(f"Decision: {profile['decision_making_style']}")
+                    if "motivation_type" in profile:
+                        pref_list.append(f"Motivation: {profile['motivation_type']}")
+                    if "productivity_pattern" in profile:
+                        pref_list.append(f"Productivity: {profile['productivity_pattern']}")
+                    dna["preferences"].extend(pref_list)
+                    
+                    if "communication_style" in profile:
+                        dna["communication_style"].append(profile["communication_style"])
+                    if "strengths" in profile:
+                        dna["strengths"].extend(profile["strengths"] if isinstance(profile["strengths"], list) else [profile["strengths"]])
+                    if "weaknesses" in profile:
+                        dna["weaknesses"].extend(profile["weaknesses"] if isinstance(profile["weaknesses"], list) else [profile["weaknesses"]])
+            except Exception as e:
+                print("Error compiling DNA from user profile:", e)
+                
+        # 2. If dna is still empty, fallback to memories table
+        is_empty = all(len(v) == 0 for v in dna.values())
+        if is_empty:
+            memories = await self.get_memories(user_id)
+            for memory in memories:
+                if memory.memory_type in dna:
+                    dna[memory.memory_type].append(memory.content)
+                    
         return dna
 
     async def should_evolve(self, user_id: int) -> bool:
