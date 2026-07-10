@@ -27,6 +27,20 @@ class TwinMindAgent:
         if should_evolve:
             evolution_prompt = self._build_evolution_prompt(context)
             evolution_response = await self.gemini_client.generate_response(evolution_prompt, context)
+            
+            # Save a conversation entry to advance the count and avoid infinite evolution loops
+            from app.models.memory import Conversation
+            conversation = Conversation(
+                user_id=user_id,
+                mode=mode,
+                messages=[
+                    {"role": "system", "content": "Memory evolution triggered"},
+                    {"role": "assistant", "content": evolution_response}
+                ]
+            )
+            self.db.add(conversation)
+            await self.db.commit()
+            
             return {
                 "response": evolution_response,
                 "needs_evolution": True,
@@ -49,6 +63,19 @@ class TwinMindAgent:
             metadata={"mode": mode},
             importance=3
         )
+        
+        # Also store in conversations table to trigger memory evolution count correctly
+        from app.models.memory import Conversation
+        conversation = Conversation(
+            user_id=user_id,
+            mode=mode,
+            messages=[
+                {"role": "user", "content": message},
+                {"role": "assistant", "content": response}
+            ]
+        )
+        self.db.add(conversation)
+        await self.db.commit()
         
         return {
             "response": response,

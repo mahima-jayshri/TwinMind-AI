@@ -40,9 +40,19 @@ class GeminiClient:
         """Chat with conversation history"""
         system_prompt = self._get_mode_prompt(mode, context)
         
-        full_history = [{"role": "user", "parts": system_prompt}]
-        full_history.extend(conversation_history)
-        full_history.append({"role": "user", "parts": message})
+        full_history = [{"role": "user", "parts": [system_prompt]}]
+        
+        formatted_history = []
+        for item in conversation_history:
+            role = "model" if item.get("role") == "assistant" else "user"
+            content = item.get("content", "")
+            formatted_history.append({
+                "role": role,
+                "parts": [content]
+            })
+            
+        full_history.extend(formatted_history)
+        full_history.append({"role": "user", "parts": [message]})
         
         try:
             chat_session = self.chat_model.start_chat(history=full_history[:-1])
