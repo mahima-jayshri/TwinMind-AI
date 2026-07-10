@@ -62,14 +62,6 @@ export default function Login() {
 
           <button
             onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-3 bg-primary-600 text-white font-medium py-3 px-4 rounded-lg hover:bg-primary-700 transition-colors mb-4"
-          >
-            <Brain className="w-5 h-5" />
-            Quick Start (Demo Mode)
-          </button>
-
-          <button
-            onClick={handleGoogleLogin}
             className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 font-medium py-3 px-4 rounded-lg hover:bg-gray-100 transition-colors mb-4"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">

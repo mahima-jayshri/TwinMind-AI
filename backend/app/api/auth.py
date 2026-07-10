@@ -73,7 +73,7 @@ async def google_auth(
     if request.token == "mock_google_token":
         # Create demo user
         email = "demo@twinmind.ai"
-        name = "Demo User"
+        name = "Mahima Jayshri"
         google_id = "demo_user_123"
         picture = None
         
