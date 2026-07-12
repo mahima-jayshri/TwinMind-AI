@@ -1,11 +1,13 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useClerk } from '@clerk/clerk-react'
 import { Brain } from 'lucide-react'
 
 export default function Login() {
-  const { login, user } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
+  const clerk = useClerk()
 
   useEffect(() => {
     console.log('Login page - user state changed:', user)
@@ -21,27 +23,11 @@ export default function Login() {
     }
   }, [user, navigate])
 
-  const handleGoogleLogin = async () => {
-    try {
-      console.log('Attempting login...')
-      // For demo purposes, simulate Google login
-      // In production, use actual Google OAuth
-      const mockToken = 'mock_google_token'
-      const user = await login(mockToken)
-      console.log('Login successful:', user)
-      
-      // Manual navigation fallback
-      if (user && !user.is_onboarded) {
-        console.log('Manual navigation to onboarding')
-        setTimeout(() => navigate('/onboarding'), 100)
-      } else if (user && user.is_onboarded) {
-        console.log('Manual navigation to dashboard')
-        setTimeout(() => navigate('/dashboard'), 100)
-      }
-    } catch (error) {
-      console.error('Login failed:', error)
-      alert('Login failed: ' + (error.response?.data?.detail || error.message))
-    }
+  const handleClerkLogin = () => {
+    clerk.openSignIn({
+      afterSignInUrl: '/dashboard',
+      afterSignUpUrl: '/onboarding',
+    })
   }
 
   return (
@@ -61,8 +47,8 @@ export default function Login() {
           </h2>
 
           <button
-            onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 font-medium py-3 px-4 rounded-lg hover:bg-gray-100 transition-colors mb-4"
+            onClick={handleClerkLogin}
+            className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 font-medium py-3 px-4 rounded-lg hover:bg-gray-100 transition-colors mb-4 cursor-pointer"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path

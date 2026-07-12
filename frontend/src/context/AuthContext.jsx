@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { useAuth as useClerkAuth, useUser as useClerkUser } from '@clerk/clerk-react'
 import api from '../services/api'
 
 const AuthContext = createContext(null)
@@ -15,49 +16,75 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    checkAuth()
-  }, [])
+  const clerkAuth = useClerkAuth()
+  const clerkUser = useClerkUser()
 
-  const checkAuth = async () => {
-    const token = localStorage.getItem('token')
-    if (token) {
+  const { isSignedIn, getToken, signOut } = clerkAuth
+  const { user: cUser, isLoaded } = clerkUser
+
+  useEffect(() => {
+    if (isLoaded) {
+      syncWithClerk()
+    }
+  }, [isSignedIn, cUser, isLoaded])
+
+  const syncWithClerk = async () => {
+    if (isSignedIn && cUser) {
       try {
-        const response = await api.get('/auth/me')
-        setUser(response.data)
+        const token = await getToken()
+        const email = cUser.primaryEmailAddress?.emailAddress || 'demo@twinmind.ai'
+        const name = cUser.fullName || cUser.username || email.split('@')[0]
+        const picture = cUser.imageUrl
+
+        console.log('Syncing authenticated Clerk session with local backend...')
+        const response = await api.post('/auth/clerk', {
+          token,
+          email,
+          name,
+          picture
+        })
+
+        console.log('Clerk sync successful:', response.data)
+        localStorage.setItem('token', response.data.access_token)
+        setUser({
+          ...response.data.user,
+          show_memory_timeline: localStorage.getItem('show_memory_timeline') === 'true'
+        })
       } catch (error) {
+        console.error('Clerk session synchronization failed:', error)
         localStorage.removeItem('token')
+        setUser(null)
       }
+    } else {
+      localStorage.removeItem('token')
+      setUser(null)
     }
     setLoading(false)
   }
 
   const login = async (googleToken) => {
-    try {
-      console.log('Sending login request to backend...')
-      const response = await api.post('/auth/google', { token: googleToken })
-      console.log('Login response:', response.data)
-      localStorage.setItem('token', response.data.access_token)
-      setUser(response.data.user)
-      return response.data.user
-    } catch (error) {
-      console.error('Login API error:', error)
-      console.error('Error response:', error.response?.data)
-      throw error
-    }
+    // If external caller uses login directly (e.g. legacy/mock calls),
+    // we bypass. For Clerk, users sign in via the overlay modal.
+    console.warn('Direct login bypass, Clerk auth recommended.')
   }
 
-  const logout = () => {
+  const logout = async () => {
+    console.log('Logging out from Clerk...')
+    await signOut()
     localStorage.removeItem('token')
     setUser(null)
   }
 
   const updateUser = (userData) => {
-    setUser({ ...user, ...userData })
+    setUser((prev) => ({ ...prev, ...userData }))
+  }
+
+  const checkAuth = async () => {
+    await syncWithClerk()
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, checkAuth }}>
+    <AuthContext.Provider value={{ user, loading: loading || !isLoaded, login, logout, updateUser, checkAuth }}>
       {children}
     </AuthContext.Provider>
   )

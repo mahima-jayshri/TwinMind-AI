@@ -39,8 +39,18 @@ class HabitRequest(BaseModel):
     metadata: Optional[dict] = None
 
 
+class HabitUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    frequency: Optional[str] = None
+    target_count: Optional[int] = None
+    status: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
 class HabitLogRequest(BaseModel):
     notes: Optional[str] = None
+
 
 
 @router.get("/goals")
@@ -278,3 +288,74 @@ async def get_habit_logs(
         }
         for l in logs
     ]
+
+
+@router.put("/habits/{habit_id}")
+async def update_habit(
+    habit_id: int,
+    request: HabitUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a habit"""
+    result = await db.execute(
+        select(Habit).where(
+            Habit.id == habit_id,
+            Habit.user_id == current_user.id
+        )
+    )
+    habit = result.scalar_one_or_none()
+    
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    
+    if request.name is not None:
+        habit.name = request.name
+    if request.description is not None:
+        habit.description = request.description
+    if request.frequency is not None:
+        habit.frequency = request.frequency
+    if request.target_count is not None:
+        habit.target_count = request.target_count
+    if request.status is not None:
+        habit.status = request.status
+    if request.metadata is not None:
+        habit.meta_data = request.metadata
+        
+    await db.commit()
+    await db.refresh(habit)
+    
+    return {"message": "Habit updated successfully"}
+
+
+@router.delete("/habits/{habit_id}")
+async def delete_habit(
+    habit_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a habit"""
+    result = await db.execute(
+        select(Habit).where(
+            Habit.id == habit_id,
+            Habit.user_id == current_user.id
+        )
+    )
+    habit = result.scalar_one_or_none()
+    
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    
+    # Also delete associated habit logs
+    logs_result = await db.execute(
+        select(HabitLog).where(HabitLog.habit_id == habit_id)
+    )
+    logs = logs_result.scalars().all()
+    for log in logs:
+        await db.delete(log)
+        
+    await db.delete(habit)
+    await db.commit()
+    
+    return {"message": "Habit deleted successfully"}
+
