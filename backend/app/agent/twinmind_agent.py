@@ -2,6 +2,8 @@ from typing import Dict, Any, Optional, List
 from app.agent.gemini_client import GeminiClient
 from app.memory.memory_manager import MemoryManager
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+
 
 
 class TwinMindAgent:
@@ -19,8 +21,12 @@ class TwinMindAgent:
     ) -> Dict[str, Any]:
         """Process user message and generate response"""
         
+        # Check and update goals/habits from message
+        await self._check_and_update_goals_habits(user_id, message)
+        
         # Get user context
         context = await self.memory_manager.get_context_for_agent(user_id)
+
         
         # Check if memory evolution is needed
         should_evolve = await self.memory_manager.should_evolve(user_id)
@@ -47,12 +53,20 @@ class TwinMindAgent:
                 "mode": mode
             }
         
+        # Get user preferred language
+        from app.models.user import User
+        from sqlalchemy import select
+        user_result = await self.db.execute(select(User).where(User.id == user_id))
+        db_user = user_result.scalar_one_or_none()
+        preferred_language = db_user.preferred_language if db_user else "english"
+
         # Generate response
         response = await self.gemini_client.chat(
             message=message,
             conversation_history=conversation_history or [],
             context=context,
-            mode=mode
+            mode=mode,
+            preferred_language=preferred_language
         )
         
         # Store conversation memory
@@ -399,3 +413,186 @@ Return only valid JSON."""
             "decision_making_style": "analytical",
             "productivity_pattern": "variable"
         }
+
+    async def _check_and_update_goals_habits(self, user_id: int, message: str) -> None:
+        """Analyze if user wants to update goals/habits via natural language and execute the changes"""
+        from app.models.goals import Goal, Habit, HabitLog
+        from sqlalchemy import select
+        import json
+
+        try:
+            # 1. Fetch current goals and habits for reference in matching
+            goals_result = await self.db.execute(
+                select(Goal).where(Goal.user_id == user_id)
+            )
+            goals = goals_result.scalars().all()
+
+            habits_result = await self.db.execute(
+                select(Habit).where(Habit.user_id == user_id)
+            )
+            habits = habits_result.scalars().all()
+
+            # 2. Call Gemini to parse the user request
+            prompt = f"""You are TwinMind AI's backend coordinator. Analyze this user chat message: "{message}"
+Current User Goals:
+{[{"id": g.id, "title": g.title, "status": g.status, "progress": g.progress} for g in goals]}
+Current User Habits:
+{[{"id": h.id, "name": h.name, "status": h.status, "current_streak": h.current_streak} for h in habits]}
+
+Does the user want to perform one of the following operations on their goals or habits?
+Operations:
+- "create_goal" (wants to add a new goal)
+- "update_goal" (wants to change progress, complete, or update an existing goal)
+- "delete_goal" (wants to delete or remove a goal)
+- "create_habit" (wants to add a new habit to track)
+- "delete_habit" (wants to delete or remove a habit)
+- "log_habit" (completed or logged their habit)
+- "none" (none of the above/normal chat)
+
+Choose the single best matching operation. If the message matches an action, return a JSON object with this exact structure:
+{{
+    "action": "create_goal" | "update_goal" | "delete_goal" | "create_habit" | "delete_habit" | "log_habit" | "none",
+    "details": {{
+        "id": integer_id_of_existing_goal_or_habit_or_null,
+        "title": "exact title of goal or habit (if creating or searching)",
+        "progress": number_0_to_100_or_null,
+        "status": "active" | "completed" | "paused" | null,
+        "priority": "low" | "medium" | "high" | null,
+        "frequency": "daily" | "weekly" | null
+    }}
+}}
+If the user refers to an existing goal/habit, select the correct id from the lists. Return ONLY valid JSON, no other text."""
+
+            response = await self.gemini_client.generate_response(prompt)
+            # Clean response text to extract json
+            start = response.find("{")
+            end = response.rfind("}") + 1
+            if start != -1 and end != -1:
+                data = json.loads(response[start:end])
+                action = data.get("action", "none")
+                details = data.get("details", {})
+                
+                if action == "none":
+                    return
+
+                if action == "create_goal" and details.get("title"):
+                    # Create Goal
+                    g = Goal(
+                        user_id=user_id,
+                        title=details.get("title"),
+                        goal_type=details.get("goal_type") or "short_term",
+                        category=details.get("category") or "personal",
+                        priority=details.get("priority") or "medium",
+                        progress=0.0,
+                        status="active"
+                    )
+                    self.db.add(g)
+                    await self.db.commit()
+
+                elif action == "update_goal":
+                    goal_id = details.get("id")
+                    title = details.get("title")
+                    
+                    goal = None
+                    if goal_id:
+                        goal = await self.db.get(Goal, goal_id)
+                    elif title:
+                        # Try case-insensitive matching
+                        for g in goals:
+                            if title.lower() in g.title.lower():
+                                goal = g
+                                break
+                    
+                    if goal:
+                        if details.get("progress") is not None:
+                            goal.progress = float(details.get("progress"))
+                        if details.get("status") is not None:
+                            goal.status = details.get("status")
+                            if goal.status == "completed":
+                                goal.progress = 100.0
+                                goal.completed_at = datetime.utcnow()
+                        if details.get("priority") is not None:
+                            goal.priority = details.get("priority")
+                        await self.db.commit()
+
+                elif action == "delete_goal":
+                    goal_id = details.get("id")
+                    title = details.get("title")
+                    
+                    goal = None
+                    if goal_id:
+                        goal = await self.db.get(Goal, goal_id)
+                    elif title:
+                        for g in goals:
+                            if title.lower() in g.title.lower():
+                                goal = g
+                                break
+                    
+                    if goal:
+                        await self.db.delete(goal)
+                        await self.db.commit()
+
+                elif action == "create_habit" and details.get("title"):
+                    h = Habit(
+                        user_id=user_id,
+                        name=details.get("title"),
+                        frequency=details.get("frequency") or "daily",
+                        status="active"
+                    )
+                    self.db.add(h)
+                    await self.db.commit()
+
+                elif action == "delete_habit":
+                    habit_id = details.get("id")
+                    title = details.get("title")
+                    
+                    habit = None
+                    if habit_id:
+                        habit = await self.db.get(Habit, habit_id)
+                    elif title:
+                        for h in habits:
+                            if title.lower() in h.name.lower():
+                                habit = h
+                                break
+                    
+                    if habit:
+                        # Also delete logs
+                        logs_result = await self.db.execute(
+                            select(HabitLog).where(HabitLog.habit_id == habit.id)
+                        )
+                        for log in logs_result.scalars().all():
+                            await self.db.delete(log)
+                        await self.db.delete(habit)
+                        await self.db.commit()
+
+                elif action == "log_habit":
+                    habit_id = details.get("id")
+                    title = details.get("title")
+                    
+                    habit = None
+                    if habit_id:
+                        habit = await self.db.get(Habit, habit_id)
+                    elif title:
+                        for h in habits:
+                            if title.lower() in h.name.lower():
+                                habit = h
+                                break
+                    
+                    if habit:
+                        # Log completion
+                        log = HabitLog(
+                            habit_id=habit.id,
+                            user_id=user_id,
+                            notes="Logged via Chat Agent"
+                        )
+                        self.db.add(log)
+                        
+                        habit.current_streak += 1
+                        if habit.current_streak > habit.best_streak:
+                            habit.best_streak = habit.current_streak
+                        
+                        await self.db.commit()
+
+        except Exception as e:
+            print("Error parsing user goals/habits intent from message:", e)
+

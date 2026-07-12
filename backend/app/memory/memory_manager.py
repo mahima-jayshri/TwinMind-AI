@@ -202,5 +202,27 @@ class MemoryManager:
                 "content": memory.content,
                 "importance": memory.importance
             })
+            
+        # Fetch actual active goals and habits from database tables to keep context accurate
+        from app.models.goals import Goal, Habit
+        try:
+            db_goals_result = await self.db.execute(
+                select(Goal).where(Goal.user_id == user_id, Goal.status == "active")
+            )
+            db_goals = db_goals_result.scalars().all()
+            for g in db_goals:
+                if g.title not in context["current_goals"]:
+                    context["current_goals"].append(g.title)
+
+            db_habits_result = await self.db.execute(
+                select(Habit).where(Habit.user_id == user_id, Habit.status == "active")
+            )
+            db_habits = db_habits_result.scalars().all()
+            for h in db_habits:
+                if h.name not in context["active_habits"]:
+                    context["active_habits"].append(h.name)
+        except Exception as e:
+            print("Error retrieving active goals/habits in context:", e)
         
         return context
+

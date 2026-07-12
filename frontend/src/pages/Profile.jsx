@@ -13,7 +13,8 @@ export default function Profile() {
   const [settings, setSettings] = useState({
     preferred_mode: user?.preferred_mode || 'mentor',
     preferred_tone: user?.preferred_tone || 'professional',
-    preferred_language: user?.preferred_language || 'english'
+    preferred_language: user?.preferred_language || 'english',
+    show_memory_timeline: localStorage.getItem('show_memory_timeline') === 'true'
   })
   const [memories, setMemories] = useState([])
   const [loading, setLoading] = useState(false)
@@ -22,6 +23,18 @@ export default function Profile() {
   useEffect(() => {
     loadMemories()
   }, [])
+
+  useEffect(() => {
+    if (user) {
+      setSettings((prev) => ({
+        ...prev,
+        preferred_mode: user.preferred_mode || 'mentor',
+        preferred_tone: user.preferred_tone || 'professional',
+        preferred_language: user.preferred_language || 'english',
+        show_memory_timeline: localStorage.getItem('show_memory_timeline') === 'true'
+      }))
+    }
+  }, [user])
 
   const loadMemories = async () => {
     try {
@@ -35,8 +48,18 @@ export default function Profile() {
   const handleSaveSettings = async () => {
     setSaving(true)
     try {
-      // In production, this would call an API to update user settings
-      updateUser(settings)
+      localStorage.setItem('show_memory_timeline', String(settings.show_memory_timeline))
+      
+      const response = await api.put('/auth/settings', {
+        preferred_mode: settings.preferred_mode,
+        preferred_tone: settings.preferred_tone,
+        preferred_language: settings.preferred_language
+      })
+      
+      updateUser({
+        ...response.data,
+        show_memory_timeline: settings.show_memory_timeline
+      })
       setTimeout(() => setSaving(false), 500)
     } catch (error) {
       console.error('Failed to save settings:', error)
@@ -145,6 +168,19 @@ export default function Profile() {
                 <option value="french">French</option>
                 <option value="german">German</option>
               </select>
+            </div>
+
+            <div className="flex items-center gap-3 py-2">
+              <input
+                type="checkbox"
+                id="show_memory_timeline"
+                checked={settings.show_memory_timeline}
+                onChange={(e) => setSettings({ ...settings, show_memory_timeline: e.target.checked })}
+                className="w-4 h-4 rounded border-dark-border bg-dark-bg text-primary-600 focus:ring-primary-500 focus:ring-offset-dark-bg cursor-pointer"
+              />
+              <label htmlFor="show_memory_timeline" className="text-gray-300 text-sm font-medium cursor-pointer select-none">
+                Show Memory Timeline on Dashboard
+              </label>
             </div>
 
             <button

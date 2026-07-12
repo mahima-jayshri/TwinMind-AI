@@ -35,11 +35,18 @@ class GeminiClient:
         message: str,
         conversation_history: list,
         context: Optional[Dict[str, Any]] = None,
-        mode: str = "mentor"
+        mode: str = "mentor",
+        preferred_language: str = "english"
     ) -> str:
         """Chat with conversation history"""
         system_prompt = self._get_mode_prompt(mode, context)
         
+        # Add language instruction
+        if preferred_language and preferred_language.lower() != "english":
+            system_prompt += f"\n\nCRITICAL: Respond to the user in {preferred_language.title()} language. Do not speak English unless explicitly asked. Always output in {preferred_language.title()}."
+        else:
+            system_prompt += "\n\nRespond in English."
+            
         full_history = [{"role": "user", "parts": [system_prompt]}]
         
         formatted_history = []
