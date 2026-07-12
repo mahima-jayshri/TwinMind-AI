@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.db.database import get_db
 from app.models.user import User
 from app.core.security import create_access_token, decode_access_token
@@ -90,6 +90,22 @@ async def google_auth(
                 onboarding_step=0
             )
             db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        else:
+            # Reset onboarding and delete user data on each login to allow re-onboarding
+            user.is_onboarded = False
+            user.onboarding_step = 0
+            user.digital_dna = None
+            
+            # Delete memories, goals, habits, and conversations
+            from app.models.memory import Memory, Conversation
+            from app.models.goals import Goal, Habit
+            await db.execute(delete(Memory).where(Memory.user_id == user.id))
+            await db.execute(delete(Conversation).where(Conversation.user_id == user.id))
+            await db.execute(delete(Goal).where(Goal.user_id == user.id))
+            await db.execute(delete(Habit).where(Habit.user_id == user.id))
+            
             await db.commit()
             await db.refresh(user)
         
