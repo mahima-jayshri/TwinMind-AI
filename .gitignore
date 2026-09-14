@@ -7,10 +7,16 @@
 # Environment variables & secrets
 .env
 **/.env
+**/.env.local
+.env.*
 
-# Local Databases
+# Local Databases & Caches
 *.db
 backend/*.db
+.pytest_cache/
+**/.pytest_cache/
+dist/
+**/dist/
 
 # OS specific files
 .DS_Store

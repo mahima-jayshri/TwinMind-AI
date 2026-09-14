@@ -3,10 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import init_db
 from app.api import auth, agent, memory, goals, predictions
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database on application startup"""
+    await init_db()
+    yield
+
 app = FastAPI(
     title="TwinMind AI",
     description="AI Agent that creates digital twins of users",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -25,11 +34,6 @@ app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
 app.include_router(goals.router, prefix="/api", tags=["Goals & Habits"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Predictions"])
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    await init_db()
 
 
 @app.get("/")

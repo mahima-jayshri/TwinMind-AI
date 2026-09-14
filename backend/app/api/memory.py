@@ -99,7 +99,7 @@ async def update_memory(
             "id": memory.id,
             "type": memory.memory_type,
             "content": memory.content,
-            "metadata": memory.metadata,
+            "metadata": memory.meta_data,
             "importance": memory.importance,
             "updated_at": memory.updated_at.isoformat()
         }

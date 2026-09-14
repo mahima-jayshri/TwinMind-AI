@@ -388,34 +388,49 @@ Generate a comprehensive Digital DNA Profile in JSON format with these sections:
 Return only valid JSON."""
 
     def _parse_dna_response(self, response: str) -> Dict[str, Any]:
-        """Parse DNA response from Gemini"""
+        """Parse DNA response from Gemini with markdown codeblock support"""
         import json
+        import re
+
+        clean_response = response.strip()
+        # Remove ```json ... ``` blocks if present
+        if "```" in clean_response:
+            matches = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", clean_response)
+            if matches:
+                clean_response = matches[0].strip()
+
         try:
-            # Try to extract JSON from response
-            start = response.find("{")
-            end = response.rfind("}") + 1
+            start = clean_response.find("{")
+            end = clean_response.rfind("}") + 1
             if start != -1 and end != -1:
-                json_str = response[start:end]
+                json_str = clean_response[start:end]
                 return json.loads(json_str)
-        except:
+        except Exception:
             pass
         
         # Fallback if parsing fails
         return {
-            "personality_type": "analytical",
-            "learning_style": "mixed",
-            "communication_style": "professional",
-            "strengths": ["determined", "focused"],
-            "weaknesses": ["procrastination"],
-            "goals": {"short_term": [], "long_term": []},
-            "habits": [],
-            "motivation_type": "growth",
-            "decision_making_style": "analytical",
-            "productivity_pattern": "variable"
+            "personality_type": "Architect (Strategic & Driven)",
+            "learning_style": "Hands-on & Conceptual",
+            "communication_style": "Direct & Goal-Oriented",
+            "strengths": ["Deep Focus", "Systematic Thinking", "Continuous Growth"],
+            "weaknesses": ["Occasional Over-analysis", "Context Switching"],
+            "goals": {
+                "short_term": ["Master core technologies", "Build daily deep work routine"],
+                "long_term": ["Lead high-impact engineering projects", "Achieve creative autonomy"]
+            },
+            "habits": ["Morning Planning", "90-minute Deep Work Block", "Evening Reflection"],
+            "motivation_type": "Mastery & High Impact",
+            "decision_making_style": "Data-Informed & Strategic",
+            "productivity_pattern": "Peak Morning Focus"
         }
 
     async def _check_and_update_goals_habits(self, user_id: int, message: str) -> None:
         """Analyze if user wants to update goals/habits via natural language and execute the changes"""
+        # Fast-path: Casual greetings and small talk do not update goals or habits
+        if self.gemini_client._detect_intent(message) == "casual_greeting":
+            return
+
         from app.models.goals import Goal, Habit, HabitLog
         from sqlalchemy import select
         import json
